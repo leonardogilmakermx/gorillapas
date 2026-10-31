@@ -1,0 +1,1363 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gorilla pas - Zero Gravity Edition</title>
+    <!-- Palabras clave y metadatos SEO en el header -->
+    <meta name="keywords" content="juego qbasic, juego online, gorillas bas, gorilla pas, arcade, retro, ms-dos, qbasic gorillas, estrategia, disparos, torreta, inteligencia artificial">
+    <meta name="description" content="Gorilla pas es una versión moderna y mejorada del mítico juego de QBasic Gorillas.bas. Disfruta de físicas balísticas precisas, modo contra IA BAS, gravedad personalizable y efectos de sonido retro en línea.">
+    <style>
+        body {
+            background-color: #000;
+            color: #fff;
+            font-family: 'Courier New', Courier, monospace;
+            text-align: center;
+            margin: 0;
+            padding: 10px;
+        }
+        h1 { color: #00FFFF; margin: 5px; text-shadow: 0 0 8px #00FFFF; font-size: 24px; letter-spacing: 2px; }
+        #game-container {
+            position: relative;
+            display: inline-block;
+            border: 4px solid #00FFFF;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.4);
+        }
+        canvas { display: block; background-color: #0000AA; }
+        
+        .hud {
+            margin: 8px auto;
+            width: 792px;
+            background: linear-gradient(to bottom, #111, #222);
+            border: 2px solid #00FFFF;
+            padding: 8px 4px;
+            font-size: 15px;
+            font-weight: bold;
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            box-shadow: inset 0 0 10px rgba(0, 255, 255, 0.3);
+        }
+        .p1-hud { color: #55FFFF; text-shadow: 0 0 5px #00BFFF; }
+        .p2-hud { color: #FF6347; text-shadow: 0 0 5px #FF4500; }
+        .wind-hud { color: #FFFF55; text-shadow: 0 0 5px #FFFF00; }
+
+        .controls-box {
+            margin-top: 5px;
+            background: #222;
+            padding: 10px;
+            display: inline-block;
+            border: 1px solid #555;
+        }
+        input {
+            width: 70px;
+            background: #000;
+            color: #0FF;
+            border: 1px solid #0FF;
+            padding: 5px;
+            text-align: center;
+            font-family: monospace;
+            font-size: 16px;
+        }
+        input:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        button {
+            background: #00FFFF;
+            color: #000;
+            border: none;
+            padding: 6px 15px;
+            font-weight: bold;
+            cursor: pointer;
+            font-family: monospace;
+        }
+        button:hover:not(:disabled) { background: #fff; }
+        button:disabled { background: #555; color: #888; cursor: not-allowed; }
+        
+        #start-overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,170,0.95);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 10;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        #start-overlay h2 { color: #FFFF55; text-shadow: 0 0 10px #FFFF55; font-size: 26px; margin-bottom: 10px; }
+        #start-overlay p { color: #55FFFF; font-size: 15px; max-width: 620px; line-height: 1.6; margin-bottom: 20px; text-shadow: 0 0 5px #00FFFF; }
+        #start-overlay button { padding: 12px 25px; font-size: 18px; margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+    <h1>GORILLA PAS</h1>
+    <div id="game-container">
+        <div id="start-overlay">
+            <h2>GORILLA PAS</h2>
+            <p>Bienvenido a <strong>Gorilla pas</strong>. Este juego rinde homenaje directo a <strong>Gorillas.bas</strong>, el mítico juego programado en QBasic de MS-DOS de principios de los años 90, reimaginado para la era moderna con físicas mejoradas, gravedad personalizable y modo contra Inteligencia Artificial.</p>
+            <p style="font-size: 12px; color: #FFF;">Haz clic abajo para activar el sintetizador de audio y comenzar</p>
+            <button onclick="startFullGame()">INICIAR GORILLA PAS</button>
+        </div>
+        <canvas id="gorillasCanvas" width="800" height="540"></canvas>
+    </div>
+
+    <div class="hud" id="hudText">
+        <span class="p1-hud" id="p1HudText">P1: 0 pts</span>
+        <span class="wind-hud" id="windHudText">Viento: ➔ 0.0</span>
+        <span class="p2-hud" id="p2HudText">P2: 0 pts</span>
+    </div>
+
+    <div class="controls-box" id="controlsBox">
+        Ángulo (0-180): <input type="number" id="angleInput" value="45" min="0" max="180"> &nbsp;
+        Velocidad (1-150): <input type="number" id="velocityInput" value="60" min="1" max="150"> &nbsp;
+        <button id="fireBtn" onclick="fireBanana()">¡LANZAR BANANO!</button>
+    </div>
+
+    <div id="message" style="margin-top:10px; color: yellow; font-weight: bold; height: 24px;"></div>
+
+<script>
+const canvas = document.getElementById("gorillasCanvas");
+const ctx = canvas.getContext("2d");
+
+let audioCtx = null;
+
+function initAudio() {
+    if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+    }
+}
+
+function playSound(freq, type, duration, vol = 0.12) {
+    initAudio();
+    if (!audioCtx) return;
+    let osc = audioCtx.createOscillator();
+    let gain = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + duration);
+}
+
+function soundRetroExplosion(duration = 0.45, isBig = false) {
+    initAudio();
+    if (!audioCtx) return;
+
+    let bufferSize = audioCtx.sampleRate * duration;
+    let buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+    let data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+        data[i] = Math.random() * 2 - 1;
+    }
+
+    let noise = audioCtx.createBufferSource();
+    noise.buffer = buffer;
+
+    let filter = audioCtx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(isBig ? 900 : 600, audioCtx.currentTime);
+    filter.frequency.exponentialRampToValueAtTime(60, audioCtx.currentTime + duration);
+
+    let noiseGain = audioCtx.createGain();
+    noiseGain.gain.setValueAtTime(isBig ? 0.35 : 0.22, audioCtx.currentTime);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+
+    noise.connect(filter);
+    filter.connect(noiseGain);
+    noiseGain.connect(audioCtx.destination);
+    noise.start();
+
+    let osc = audioCtx.createOscillator();
+    let oscGain = audioCtx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(isBig ? 150 : 110, audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(25, audioCtx.currentTime + duration);
+    oscGain.gain.setValueAtTime(0.25, audioCtx.currentTime);
+    oscGain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+    osc.connect(oscGain);
+    oscGain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + duration);
+}
+
+function soundLaser() {
+    initAudio();
+    if (!audioCtx) return;
+    let osc = audioCtx.createOscillator();
+    let gain = audioCtx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + 0.2);
+    gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.2);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.2);
+}
+
+function soundSpaceExplosion() {
+    initAudio();
+    if (!audioCtx) return;
+    let osc = audioCtx.createOscillator();
+    let gain = audioCtx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(120, audioCtx.currentTime);
+    osc.frequency.linearRampToValueAtTime(30, audioCtx.currentTime + 0.4);
+    gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.4);
+}
+
+function soundSynthIntro() {
+    initAudio();
+    if (!audioCtx) return;
+    
+    let qbasicNotes = [
+        { f: 110.00, d: 0.10 },
+        { f: 220.00, d: 0.10 },
+        { f: 330.00, d: 0.10 },
+        { f: 440.00, d: 0.10 },
+        { f: 330.00, d: 0.10 },
+        { f: 554.37, d: 0.10 },
+        { f: 659.25, d: 0.15 },
+        { f: 440.00, d: 0.10 },
+        { f: 880.00, d: 0.30 }
+    ];
+
+    let timeOffset = 0;
+    qbasicNotes.forEach(note => {
+        setTimeout(() => {
+            playSound(note.f, 'square', note.d, 0.16);
+        }, timeOffset);
+        timeOffset += note.d * 900;
+    });
+}
+
+function soundModernVictory() {
+    initAudio();
+    if (!audioCtx) return;
+    let modernNotes = [329.63, 392.00, 523.25, 659.25, 880.00];
+    modernNotes.forEach((note, index) => {
+        setTimeout(() => {
+            playSound(note, 'sawtooth', 0.15);
+            playSound(note * 0.5, 'triangle', 0.2);
+        }, index * 80);
+    });
+}
+
+let danceMusicInterval = null;
+function startRobotDanceMusic() {
+    initAudio();
+    if (!audioCtx) return;
+    stopRobotDanceMusic();
+    let synthNotes = [220, 261.63, 329.63, 392.00, 440, 523.25];
+    let step = 0;
+
+    danceMusicInterval = setInterval(() => {
+        if (!audioCtx) return;
+        let note = synthNotes[step % synthNotes.length];
+        playSound(note, 'sawtooth', 0.08);
+        if (step % 2 === 0) {
+            playSound(110, 'square', 0.06);
+        }
+        step++;
+    }, 100);
+}
+
+function stopRobotDanceMusic() {
+    if (danceMusicInterval) {
+        clearInterval(danceMusicInterval);
+        danceMusicInterval = null;
+    }
+}
+
+let bananaOsc = null;
+let bananaGain = null;
+function startBananaFlightSound() {
+    initAudio();
+    if (!audioCtx) return;
+    try {
+        if (bananaOsc) { bananaOsc.stop(); }
+    } catch(e) {}
+
+    bananaOsc = audioCtx.createOscillator();
+    bananaGain = audioCtx.createGain();
+    bananaOsc.type = 'sine';
+    bananaOsc.frequency.setValueAtTime(300, audioCtx.currentTime);
+    bananaOsc.frequency.exponentialRampToValueAtTime(600, audioCtx.currentTime + 1.5);
+    
+    bananaGain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+    bananaGain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 2.0);
+    
+    bananaOsc.connect(bananaGain);
+    bananaGain.connect(audioCtx.destination);
+    bananaOsc.start();
+}
+
+function stopBananaFlightSound() {
+    if (bananaOsc) {
+        try { 
+            bananaOsc.stop(); 
+            bananaOsc.disconnect();
+        } catch(e){}
+        bananaOsc = null;
+    }
+}
+
+function soundHitCelestial() {
+    playSound(150, 'sawtooth', 0.15);
+    setTimeout(() => playSound(90, 'sawtooth', 0.25), 100);
+}
+
+let isVsAI = true;
+let aiErrorFactor = 1.0;
+let player1Name = "Jugador 1";
+let player2Name = "IA BAS";
+let totalGames = 3;
+let currentGame = 1;
+let customGravity = 9.8; 
+let highScores = [];
+
+let buildings = [];
+let gorillas = [];
+let currentPlayer = 0; 
+let wind = 0;
+let banana = null;
+let gameActive = false;
+let celestialObject = { x: 400, y: 55, radius: 25, isNight: false, hit: false };
+let celebratingPlayer = null;
+let celebrationFrame = 0;
+let explodingGorilla = null;
+let isIntroDancing = false;
+let celestialLaughTimer = 0; 
+
+let spaceLaser = null;
+let spaceExplosion = null;
+
+let lastActionTime = Date.now();
+function resetInactivityTimer() {
+    lastActionTime = Date.now();
+}
+
+function setControlsEnabled(enabled) {
+    document.getElementById("angleInput").disabled = !enabled;
+    document.getElementById("velocityInput").disabled = !enabled;
+    document.getElementById("fireBtn").disabled = !enabled;
+}
+
+document.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && gameActive && !banana && !(isVsAI && currentPlayer === 1)) {
+        fireBanana();
+    }
+});
+
+function startFullGame() {
+    initAudio();
+    document.getElementById("start-overlay").style.display = "none";
+    playIntroScreen();
+}
+
+function playIntroScreen() {
+    soundSynthIntro();
+    let startTime = Date.now();
+
+    function drawIntro() {
+        ctx.fillStyle = "#0000AA";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.fillStyle = "#FFFF55";
+        ctx.font = "bold 24px 'Courier New'";
+        ctx.textAlign = "center";
+        ctx.fillText("GORILLA PAS", canvas.width / 2, 160);
+
+        ctx.fillStyle = "#00FFFF";
+        ctx.font = "14px 'Courier New'";
+        ctx.fillText("Inspirado en el mítico Gorillas.bas de QBasic", canvas.width / 2, 225);
+
+        ctx.fillStyle = "#FFFFFF";
+        ctx.font = "14px 'Courier New'";
+        ctx.fillText("Cargando sistema clásico...", canvas.width / 2, 330);
+
+        if (Date.now() - startTime < 4000) {
+            requestAnimationFrame(drawIntro);
+        } else {
+            startGameConfig();
+        }
+    }
+    drawIntro();
+}
+
+function startGameConfig() {
+    let modeInput = prompt("Selecciona el Modo de Juego:\n1 = 1 Jugador contra IA BAS\n2 = 2 Jugadores (Humano vs Humano)", "1");
+    isVsAI = (modeInput === null || modeInput.trim() !== "2");
+
+    player1Name = prompt("Nombre del Jugador 1 (Gorila Azul):", "Gorila 1") || "Jugador 1";
+    
+    if (isVsAI) {
+        player2Name = "IA BAS";
+    } else {
+        player2Name = prompt("Nombre del Jugador 2 (Gorila Rojo):", "Gorila 2") || "Jugador 2";
+    }
+
+    let gamesInput = prompt("¿Cuántas partidas/rondas se jugarán en total?", "3");
+    totalGames = parseInt(gamesInput) || 3;
+
+    let gravityInput = prompt("Introduce la Gravedad (Ej. 9.8, 3.7 para Marte, 1.6 para Luna) o presiona Enter para Default (9.8). Pon 0 para Gravedad Cero cósmica:", "9.8");
+    if (gravityInput === null || gravityInput.trim() === "") {
+        customGravity = 9.8;
+    } else {
+        let parsedGrav = parseFloat(gravityInput);
+        customGravity = isNaN(parsedGrav) ? 9.8 : parsedGrav;
+    }
+
+    gorillas = [];
+    currentGame = 1;
+    initCity();
+}
+
+function initCity() {
+    buildings = [];
+    let x = 0;
+    const buildingColors = ["#AA0000", "#00AAAA", "#AA00AA", "#555555", "#AAAA00"];
+    
+    while (x < canvas.width) {
+        let w = Math.floor(Math.random() * 50) + 45; 
+        if (x + w > canvas.width) w = canvas.width - x;
+        let h = Math.floor(Math.random() * 210) + 120; 
+        
+        buildings.push({
+            x: x,
+            y: canvas.height - h,
+            w: w,
+            h: h,
+            color: buildingColors[Math.floor(Math.random() * buildingColors.length)],
+            craters: []
+        });
+        x += w;
+    }
+
+    wind = (Math.random() * 6 - 3).toFixed(1);
+    celestialObject.isNight = Math.random() < 0.5;
+    celestialObject.hit = false;
+    celebratingPlayer = null;
+    explodingGorilla = null;
+    celestialLaughTimer = 0;
+    spaceLaser = null;
+    spaceExplosion = null;
+    aiErrorFactor = 1.0;
+
+    let b1 = buildings[1];
+    let b2 = buildings[buildings.length - 2];
+
+    if (!gorillas[0]) {
+        gorillas = [
+            { x: b1.x + b1.w / 2, y: b1.y, color: "#00BFFF", chestColor: "#55FFFF", score: 0, alive: true, damage: 0 },
+            { x: b2.x + b2.w / 2, y: b2.y, color: "#FF4500", chestColor: "#FF6347", score: 0, alive: true, damage: 0 }
+        ];
+    } else {
+        gorillas[0].x = b1.x + b1.w / 2; gorillas[0].y = b1.y; gorillas[0].alive = true; gorillas[0].damage = 0;
+        gorillas[1].x = b2.x + b2.w / 2; gorillas[1].y = b2.y; gorillas[1].alive = true; gorillas[1].damage = 0;
+    }
+
+    currentPlayer = 0;
+    isIntroDancing = true;
+    setControlsEnabled(false);
+    resetInactivityTimer();
+    updateHUD();
+
+    soundModernVictory();
+
+    let danceTicks = 0;
+    let introInterval = setInterval(() => {
+        danceTicks++;
+        celebrationFrame++;
+        draw();
+        document.getElementById("message").innerText = `¡RONDA ${currentGame} DE ${totalGames} - G: ${customGravity}!`;
+        if (danceTicks > 30) {
+            clearInterval(introInterval);
+            isIntroDancing = false;
+            celebrationFrame = 0;
+            document.getElementById("message").innerText = "";
+            gameActive = true;
+            setControlsEnabled(true);
+            resetInactivityTimer();
+            draw();
+        }
+    }, 60);
+}
+
+function updateHUD() {
+    let windVal = parseFloat(wind);
+    let windArrow = "⚖️ CALMA";
+    if (windVal > 0) {
+        windArrow = "➔".repeat(Math.min(Math.ceil(Math.abs(windVal)), 3)) + ` (+${wind}) ➔`;
+    } else if (windVal < 0) {
+        windArrow = `⬅ (${wind}) ` + "⬅".repeat(Math.min(Math.ceil(Math.abs(windVal)), 3));
+    }
+
+    document.getElementById("p1HudText").innerHTML = `🔵 ${player1Name}: [${gorillas[0] ? gorillas[0].score : 0}]`;
+    document.getElementById("windHudText").innerHTML = `💨 Viento: ${windArrow} | G: ${customGravity}`;
+    document.getElementById("p2HudText").innerHTML = `🔴 ${player2Name}: [${gorillas[1] ? gorillas[1].score : 0}]`;
+}
+
+function drawGorillaFaceIcon(x, y, mainColor, accentColor, isActiveTurn) {
+    ctx.save();
+    ctx.translate(x, y);
+
+    if (isActiveTurn) {
+        ctx.strokeStyle = "#FFFF55";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(-16, -15, 32, 30);
+    }
+
+    ctx.fillStyle = mainColor;
+    ctx.fillRect(-14, -6, 3, 9);
+    ctx.fillRect(11, -6, 3, 9);
+
+    ctx.fillStyle = mainColor;
+    ctx.fillRect(-11, -12, 22, 24);
+
+    ctx.fillStyle = accentColor;
+    ctx.fillRect(-9, -10, 18, 4);
+
+    ctx.fillStyle = "#111";
+    ctx.fillRect(-7, -4, 4, 4);
+    ctx.fillRect(3, -4, 4, 4);
+
+    ctx.fillStyle = "#FFF";
+    ctx.fillRect(-6, -4, 2, 2);
+    ctx.fillRect(4, -4, 2, 2);
+
+    ctx.fillStyle = accentColor;
+    ctx.fillRect(-7, 2, 14, 8);
+    ctx.fillStyle = "#111";
+    ctx.fillRect(-5, 5, 10, 3);
+
+    ctx.restore();
+}
+
+function drawTopPlayerBanners() {
+    if (gorillas.length < 2) return;
+
+    ctx.save();
+
+    let p1Active = (currentPlayer === 0 && celebratingPlayer === null && !isIntroDancing);
+    ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
+    ctx.fillRect(10, 10, 235, 38);
+    ctx.strokeStyle = p1Active ? "#FFFF55" : "#00BFFF";
+    ctx.lineWidth = p1Active ? 2 : 1;
+    ctx.strokeRect(10, 10, 235, 38);
+
+    drawGorillaFaceIcon(32, 29, gorillas[0].color, gorillas[0].chestColor, p1Active);
+
+    ctx.fillStyle = "#55FFFF";
+    ctx.font = "bold 15px 'Courier New'";
+    ctx.textAlign = "left";
+    ctx.fillText(`${player1Name}`, 54, 27);
+    ctx.fillStyle = "#FFFFFF";
+    ctx.font = "12px 'Courier New'";
+    ctx.fillText(`Puntos: ${gorillas[0].score}`, 54, 42);
+
+    let p2Active = (currentPlayer === 1 && celebratingPlayer === null && !isIntroDancing);
+    ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
+    ctx.fillRect(canvas.width - 245, 10, 235, 38);
+    ctx.strokeStyle = p2Active ? "#FFFF55" : "#FF4500";
+    ctx.lineWidth = p2Active ? 2 : 1;
+    ctx.strokeRect(canvas.width - 245, 10, 235, 38);
+
+    drawGorillaFaceIcon(canvas.width - 32, 29, gorillas[1].color, gorillas[1].chestColor, p2Active);
+
+    ctx.fillStyle = "#FF6347";
+    ctx.font = "bold 15px 'Courier New'";
+    ctx.textAlign = "right";
+    ctx.fillText(`${player2Name}`, canvas.width - 54, 27);
+    ctx.fillStyle = "#FFFFFF";
+    ctx.font = "12px 'Courier New'";
+    ctx.fillText(`Puntos: ${gorillas[1].score}`, canvas.width - 54, 42);
+
+    ctx.restore();
+}
+
+function drawGorilla(g, isCelebrating, isCurrentTurn, isDancing) {
+    if (!g.alive && !isDancing) return;
+
+    let gx = g.x;
+    let gy = g.y;
+    let robotOffset = 0;
+    let armAngleState = 0;
+
+    if (isCelebrating || isDancing) {
+        robotOffset = (Math.floor(celebrationFrame / 4) % 2 === 0) ? -4 : 4;
+        armAngleState = Math.floor(celebrationFrame / 4) % 2;
+    }
+
+    ctx.save();
+    ctx.translate(gx + robotOffset, gy);
+
+    ctx.fillStyle = "rgba(0,0,0,0.4)";
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 20, 7, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = g.color;
+    if (g.damage !== 3) {
+        ctx.fillRect(-12, -16, 9, 16);
+        ctx.fillRect(3, -16, 9, 16);
+    } else {
+        ctx.fillRect(-12, -16, 9, 16);
+    }
+
+    ctx.fillStyle = g.color;
+    ctx.fillRect(-18, -45, 36, 30);
+    
+    ctx.fillStyle = g.chestColor;
+    ctx.beginPath();
+    ctx.ellipse(0, -30, 13, 9, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = g.color;
+    if (g.damage !== 2) {
+        ctx.fillRect(-12, -63, 24, 19);
+        ctx.fillStyle = "#111";
+        ctx.fillRect(-7, -57, 5, 4);
+        ctx.fillRect(2, -57, 5, 4);
+        ctx.fillRect(-6, -49, 12, 5);
+    }
+
+    ctx.fillStyle = g.color;
+    if (isCelebrating || isDancing) {
+        if (armAngleState === 0) {
+            ctx.fillRect(-28, -54, 9, 8);
+            if (g.damage !== 1) ctx.fillRect(19, -42, 9, 8);
+        } else {
+            ctx.fillRect(-28, -42, 9, 8);
+            if (g.damage !== 1) ctx.fillRect(19, -54, 9, 8);
+        }
+    } else if (isCurrentTurn) {
+        ctx.fillRect(-24, -42, 8, 18);
+        if (g.damage !== 1) ctx.fillRect(16, -60, 8, 20);
+    } else {
+        ctx.fillRect(-24, -40, 8, 18);
+        if (g.damage !== 1) ctx.fillRect(16, -40, 8, 18);
+    }
+
+    ctx.restore();
+}
+
+function drawGalaxianShip(x, y, type) {
+    ctx.save();
+    ctx.translate(x, y);
+    if (type === 'flagship') {
+        ctx.fillStyle = "#FFFF00";
+        ctx.fillRect(-4, -6, 8, 12);
+        ctx.fillStyle = "#FF0000";
+        ctx.fillRect(-8, -2, 16, 4);
+        ctx.fillStyle = "#00FFFF";
+        ctx.fillRect(-2, -8, 4, 3);
+    } else if (type === 'purple') {
+        ctx.fillStyle = "#AA00AA";
+        ctx.fillRect(-6, -5, 12, 10);
+        ctx.fillStyle = "#00FFFF";
+        ctx.fillRect(-8, -2, 4, 4);
+        ctx.fillRect(4, -2, 4, 4);
+    } else {
+        ctx.fillStyle = "#FF0000";
+        ctx.fillRect(-6, -5, 12, 10);
+        ctx.fillStyle = "#00FFFF";
+        ctx.fillRect(-8, -1, 16, 3);
+    }
+    ctx.restore();
+}
+
+function drawGalagaShip(x, y, type) {
+    ctx.save();
+    ctx.translate(x, y);
+    if (type === 'boss') {
+        ctx.fillStyle = "#00AAAA";
+        ctx.fillRect(-8, -6, 16, 12);
+        ctx.fillStyle = "#FFFF00";
+        ctx.fillRect(-4, -4, 8, 8);
+        ctx.fillStyle = "#FF0000";
+        ctx.fillRect(-2, -2, 4, 4);
+    } else {
+        ctx.fillStyle = "#FF0000";
+        ctx.fillRect(-6, -6, 12, 12);
+        ctx.fillStyle = "#FFFFFF";
+        ctx.fillRect(-3, -3, 6, 6);
+        ctx.fillStyle = "#00FFFF";
+        ctx.fillRect(-2, 0, 4, 4);
+    }
+    ctx.restore();
+}
+
+function drawBanana(x, y) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(Date.now() / 150);
+
+    ctx.fillStyle = "#FFFF00";
+    ctx.beginPath();
+    ctx.arc(0, 0, 7, 0, Math.PI);
+    ctx.fill();
+
+    ctx.fillStyle = "#DAA520";
+    ctx.fillRect(-4, -2, 8, 3);
+
+    ctx.fillStyle = "#556B2F";
+    ctx.fillRect(5, -6, 3, 4);
+
+    ctx.restore();
+}
+
+function draw() {
+    ctx.fillStyle = celestialObject.isNight ? "#000033" : "#0000AA";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    let inactiveTime = Date.now() - lastActionTime;
+    let isSleeping = gameActive && (inactiveTime > 60000);
+    let showGalactic = gameActive && (inactiveTime > 20000); 
+
+    if (showGalactic && !banana && celebratingPlayer === null) {
+        let animX = (Date.now() / 5) % (canvas.width + 150) - 75;
+        let targetX = animX - 30;
+
+        let cycleTime = Math.floor(Date.now() / 1500) % 2;
+        if (cycleTime === 0 && !spaceLaser && !spaceExplosion) {
+            spaceLaser = { x: animX + 10, y: 105, targetX: targetX };
+            soundLaser();
+        }
+
+        if (spaceLaser) {
+            ctx.fillStyle = "#FF00FF";
+            ctx.fillRect(spaceLaser.x, spaceLaser.y, 12, 3);
+            spaceLaser.x += 8;
+            if (spaceLaser.x >= targetX) {
+                spaceExplosion = { x: targetX, y: 105, radius: 5 };
+                soundSpaceExplosion();
+                spaceLaser = null;
+            }
+        }
+
+        if (spaceExplosion) {
+            ctx.fillStyle = "#FFCC00";
+            ctx.beginPath();
+            ctx.arc(spaceExplosion.x, spaceExplosion.y, spaceExplosion.radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = "#FF0000";
+            ctx.beginPath();
+            ctx.arc(spaceExplosion.x, spaceExplosion.y, spaceExplosion.radius * 0.5, 0, Math.PI * 2);
+            ctx.fill();
+            spaceExplosion.radius += 1.5;
+            if (spaceExplosion.radius > 20) {
+                spaceExplosion = null;
+            }
+        }
+
+        if (celestialObject.isNight) {
+            drawGalagaShip(animX, 100, 'boss');
+            if (!spaceExplosion) {
+                drawGalagaShip(targetX, 100, 'red');
+            }
+        } else {
+            drawGalaxianShip(animX, 100, 'flagship');
+            if (!spaceExplosion) {
+                drawGalaxianShip(targetX, 100, 'purple');
+            }
+        }
+    }
+
+    if (celestialObject.isNight) {
+        ctx.fillStyle = "#FFFFFF";
+        let starSeed = Math.floor(Date.now() / 200);
+        for (let i = 0; i < 30; i++) {
+            let sx = (i * 37) % canvas.width;
+            let sy = (i * 23) % (canvas.height / 2);
+            if ((i + starSeed) % 3 === 0) {
+                ctx.fillRect(sx, sy, 2, 2);
+            }
+        }
+
+        ctx.fillStyle = celestialObject.hit ? "#FF5555" : "#FFFF55";
+        ctx.beginPath();
+        ctx.arc(celestialObject.x, celestialObject.y, celestialObject.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#000033";
+        ctx.beginPath();
+        ctx.arc(celestialObject.x - 8, celestialObject.y - 4, celestialObject.radius - 4, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = "#000";
+        ctx.lineWidth = 2;
+        if (celestialLaughTimer > 0) {
+            ctx.beginPath();
+            ctx.arc(celestialObject.x + 4, celestialObject.y - 4, 3, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(celestialObject.x, celestialObject.y + 6, 8, 0, Math.PI);
+            ctx.stroke();
+
+            ctx.fillStyle = "#FFFFFF";
+            ctx.font = "bold 16px 'Courier New'";
+            ctx.fillText("¡JAJAJA!", celestialObject.x + 35, celestialObject.y - 15);
+        } else if (isSleeping) {
+            ctx.beginPath();
+            ctx.moveTo(celestialObject.x, celestialObject.y - 5); ctx.lineTo(celestialObject.x + 8, celestialObject.y - 5);
+            ctx.stroke();
+
+            ctx.fillStyle = "#FFFFFF";
+            ctx.beginPath();
+            ctx.moveTo(celestialObject.x - 15, celestialObject.y - 15);
+            ctx.lineTo(celestialObject.x + 15, celestialObject.y - 15);
+            ctx.lineTo(celestialObject.x + 25, celestialObject.y - 30);
+            ctx.fill();
+
+            ctx.fillStyle = "#FFFFFF";
+            ctx.font = "bold 16px 'Courier New'";
+            let zOffset = Math.sin(Date.now() / 300) * 5;
+            ctx.fillText("Z", celestialObject.x + 35, celestialObject.y - 10 + zOffset);
+            ctx.fillText("Z", celestialObject.x + 50, celestialObject.y - 25 + zOffset);
+        } else {
+            ctx.beginPath();
+            ctx.arc(celestialObject.x + 4, celestialObject.y - 4, 2, 0, Math.PI * 2);
+            ctx.fillStyle = "#000";
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(celestialObject.x, celestialObject.y + 4, 8, 0, Math.PI);
+            ctx.stroke();
+        }
+
+    } else {
+        ctx.save();
+        ctx.translate(celestialObject.x, celestialObject.y);
+        
+        ctx.strokeStyle = "#FFFF55";
+        ctx.lineWidth = 3;
+        for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 4) {
+            ctx.beginPath();
+            ctx.moveTo(Math.cos(angle) * 30, Math.sin(angle) * 30);
+            ctx.lineTo(Math.cos(angle) * 42, Math.sin(angle) * 42);
+            ctx.stroke();
+        }
+
+        ctx.fillStyle = celestialObject.hit ? "#FF3333" : "#FFFF55";
+        ctx.beginPath();
+        ctx.arc(0, 0, celestialObject.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+        
+        ctx.strokeStyle = "#000";
+        ctx.lineWidth = 2;
+
+        if (celestialObject.hit) {
+            ctx.beginPath();
+            ctx.arc(celestialObject.x - 8, celestialObject.y - 5, 4, 0, Math.PI * 2);
+            ctx.arc(celestialObject.x + 8, celestialObject.y - 5, 4, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(celestialObject.x, celestialObject.y + 10, 6, 0, Math.PI, true);
+            ctx.stroke();
+        } else if (celestialLaughTimer > 0) {
+            ctx.beginPath();
+            ctx.arc(celestialObject.x - 8, celestialObject.y - 5, 3, 0, Math.PI * 2);
+            ctx.arc(celestialObject.x + 8, celestialObject.y - 5, 3, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(celestialObject.x, celestialObject.y + 5, 10, 0, Math.PI * 2); 
+            ctx.stroke();
+
+            ctx.fillStyle = "#FFFFFF";
+            ctx.font = "bold 16px 'Courier New'";
+            ctx.fillText("¡JAJAJA!", celestialObject.x + 40, celestialObject.y - 15);
+        } else if (isSleeping) {
+            ctx.beginPath();
+            ctx.moveTo(celestialObject.x - 11, celestialObject.y - 5); ctx.lineTo(celestialObject.x - 5, celestialObject.y - 5);
+            ctx.moveTo(celestialObject.x + 5, celestialObject.y - 5); ctx.lineTo(celestialObject.x + 11, celestialObject.y - 5);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(celestialObject.x, celestialObject.y + 5, 4, 0, Math.PI * 2);
+            ctx.stroke();
+
+            ctx.fillStyle = "#FFFF55";
+            ctx.fillRect(celestialObject.x + 15, celestialObject.y + 10, 10, 6);
+            ctx.strokeRect(celestialObject.x + 18, celestialObject.y + 12, 6, 6);
+
+            ctx.fillStyle = "#FFFFFF";
+            ctx.font = "bold 14px 'Courier New'";
+            let zOffset = Math.sin(Date.now() / 300) * 5;
+            ctx.fillText("Z", celestialObject.x + 35, celestialObject.y - 10 + zOffset);
+            ctx.font = "bold 18px 'Courier New'";
+            ctx.fillText("Z", celestialObject.x + 48, celestialObject.y - 25 + zOffset);
+            ctx.font = "bold 22px 'Courier New'";
+            ctx.fillText("Z", celestialObject.x + 65, celestialObject.y - 45 + zOffset);
+        } else {
+            ctx.beginPath();
+            ctx.arc(celestialObject.x - 8, celestialObject.y - 5, 4, 0, Math.PI * 2);
+            ctx.arc(celestialObject.x + 8, celestialObject.y - 5, 4, 0, Math.PI * 2);
+            ctx.fillStyle = "#000";
+            ctx.fill();
+            
+            ctx.beginPath();
+            ctx.arc(celestialObject.x, celestialObject.y + 3, 10, 0, Math.PI);
+            ctx.stroke();
+        }
+    }
+
+    let skyColor = celestialObject.isNight ? "#000033" : "#0000AA";
+
+    for (let b of buildings) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(b.x, b.y, b.w, canvas.height - b.y);
+        ctx.fillStyle = b.color;
+        ctx.fill();
+
+        for (let crater of b.craters) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(crater.x, crater.y, crater.radius, 0, Math.PI * 2);
+            ctx.fillStyle = skyColor;
+            ctx.fill();
+            ctx.restore();
+        }
+
+        ctx.fillStyle = "#FFFF55";
+        let winW = 8, winH = 12;
+        let gapX = 12, gapY = 18;
+        for (let wx = b.x + 6; wx < b.x + b.w - 8; wx += gapX) {
+            for (let wy = b.y + 10; wy < canvas.height - 10; wy += gapY) {
+                let insideCrater = b.craters.some(c => Math.hypot(wx - c.x, wy - c.y) < c.radius);
+                if (!insideCrater) {
+                    ctx.fillRect(wx, wy, winW, winH);
+                }
+            }
+        }
+        ctx.restore();
+    }
+
+    if (gorillas.length === 2) {
+        for (let i = 0; i < gorillas.length; i++) {
+            let isCelebrating = (celebratingPlayer === i);
+            let isCurrentTurn = (currentPlayer === i && celebratingPlayer === null && !isIntroDancing);
+            drawGorilla(gorillas[i], isCelebrating, isCurrentTurn, isIntroDancing);
+        }
+    }
+
+    drawTopPlayerBanners();
+
+    if (explodingGorilla) {
+        ctx.fillStyle = "#FFA500";
+        ctx.beginPath();
+        ctx.arc(explodingGorilla.x, explodingGorilla.y - 30, explodingGorilla.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#FF0000";
+        ctx.beginPath();
+        ctx.arc(explodingGorilla.x, explodingGorilla.y - 30, explodingGorilla.radius * 0.6, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    if (banana) {
+        drawBanana(banana.x, banana.y);
+    }
+}
+
+setInterval(() => {
+    if (!banana && celebratingPlayer === null && gameActive) {
+        draw();
+    }
+}, 100);
+
+function calculateAIShot() {
+    let aiGorilla = gorillas[1];
+    let targetGorilla = gorillas[0];
+
+    let bestAngle = 55;
+    let bestVel = 65;
+    let minDistance = Infinity;
+
+    const dt = 0.22;
+    const speedScale = 0.65;
+    const gravAccel = customGravity * 0.08;
+    const windAccel = parseFloat(wind) * 0.05;
+
+    for (let a = 30; a <= 82; a += 3) {
+        for (let v = 25; v <= 135; v += 3) {
+            let rad = (180 - a) * (Math.PI / 180);
+            let simX = aiGorilla.x;
+            let simY = aiGorilla.y - 60;
+            let vx = Math.cos(rad) * (v * speedScale);
+            let vy = -Math.sin(rad) * (v * speedScale);
+
+            for (let step = 0; step < 400; step++) {
+                vx += windAccel * dt;
+                vy += gravAccel * dt;
+                simX += vx * dt;
+                simY += vy * dt;
+
+                if (Math.hypot(simX - celestialObject.x, simY - celestialObject.y) < celestialObject.radius + 18) {
+                    break;
+                }
+
+                if (step > 8) {
+                    let hitBuilding = false;
+                    for (let b of buildings) {
+                        if (simX > b.x && simX < b.x + b.w && simY > b.y) {
+                            let inCrater = b.craters.some(c => Math.hypot(simX - c.x, simY - c.y) < c.radius);
+                            if (!inCrater) {
+                                hitBuilding = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (hitBuilding && Math.hypot(simX - targetGorilla.x, simY - (targetGorilla.y - 30)) > 45) {
+                        break;
+                    }
+                }
+
+                let d = Math.hypot(simX - targetGorilla.x, simY - (targetGorilla.y - 35));
+                if (d < minDistance) {
+                    minDistance = d;
+                    bestAngle = a;
+                    bestVel = v;
+                }
+
+                if (simX < 0 || simY > canvas.height) break;
+            }
+        }
+    }
+
+    let finalAngle = Math.round(bestAngle + (Math.random() * 6 - 3) * aiErrorFactor);
+    let finalVel = Math.round(bestVel + (Math.random() * 10 - 5) * aiErrorFactor);
+    aiErrorFactor = Math.max(0.2, aiErrorFactor * 0.65);
+
+    document.getElementById("angleInput").value = Math.max(10, Math.min(85, finalAngle));
+    document.getElementById("velocityInput").value = Math.max(15, Math.min(145, finalVel));
+    fireBanana(true);
+}
+
+function fireBanana(fromAI = false) {
+    if (!gameActive || banana || celebratingPlayer !== null || isIntroDancing) return;
+    if (isVsAI && currentPlayer === 1 && !fromAI) return;
+
+    resetInactivityTimer();
+    setControlsEnabled(false);
+
+    let angleDeg = parseFloat(document.getElementById("angleInput").value);
+    let velocity = parseFloat(document.getElementById("velocityInput").value);
+
+    if (isNaN(angleDeg)) angleDeg = 45;
+    if (isNaN(velocity)) velocity = 60;
+
+    let angleRad = angleDeg * (Math.PI / 180);
+    if (currentPlayer === 1) {
+        angleRad = Math.PI - angleRad;
+    }
+
+    let g = gorillas[currentPlayer];
+    const speedScale = 0.65;
+
+    banana = {
+        x: g.x,
+        y: g.y - 60,
+        vx: Math.cos(angleRad) * (velocity * speedScale),
+        vy: -Math.sin(angleRad) * (velocity * speedScale),
+        fromPlayer: currentPlayer,
+        steps: 0
+    };
+
+    startBananaFlightSound();
+    document.getElementById("message").innerText = "";
+    requestAnimationFrame(updatePhysics);
+}
+
+function updatePhysics() {
+    if (!banana) return;
+
+    banana.steps++;
+
+    const dt = 0.22;
+    const gravAccel = customGravity * 0.08;
+    const windAccel = parseFloat(wind) * 0.05;
+
+    banana.vx += windAccel * dt;
+    banana.vy += gravAccel * dt;
+
+    banana.x += banana.vx * dt;
+    banana.y += banana.vy * dt;
+
+    draw();
+
+    if (customGravity === 0 && banana.y < -50) {
+        stopBananaFlightSound();
+        runZeroGravityCutscene();
+        return;
+    }
+
+    let distCelestial = Math.hypot(banana.x - celestialObject.x, banana.y - celestialObject.y);
+    if (distCelestial < celestialObject.radius + 18) {
+        stopBananaFlightSound();
+        soundHitCelestial();
+        celestialObject.hit = true;
+        document.getElementById("message").innerText = "¡El Sol interceptó y explotó el banano!";
+        
+        let bx = banana.x, by = banana.y;
+        banana = null;
+        
+        draw();
+        ctx.fillStyle = "#FF4500";
+        ctx.beginPath();
+        ctx.arc(bx, by, 20, 0, Math.PI * 2);
+        ctx.fill();
+
+        setTimeout(() => {
+            endTurn("¡El banano chocó contra el Sol!");
+        }, 800);
+        return;
+    }
+
+    if (banana.x < 0 || banana.x > canvas.width || banana.y > canvas.height) {
+        stopBananaFlightSound();
+        endTurn("¡El banano se fue de la pantalla!");
+        return;
+    }
+
+    for (let i = 0; i < gorillas.length; i++) {
+        let gor = gorillas[i];
+        let distToGorilla = Math.hypot(banana.x - gor.x, banana.y - (gor.y - 35));
+
+        let isSelf = (i === banana.fromPlayer);
+        let safeGuard = isSelf && banana.steps < 12 && distToGorilla < 30;
+
+        if (gor.alive && !safeGuard) {
+            if (distToGorilla < 25) {
+                stopBananaFlightSound();
+                soundRetroExplosion(0.6, true);
+                gor.alive = false;
+                explodingGorilla = { x: gor.x, y: gor.y, radius: 15 };
+                
+                let scoringPlayer = isSelf ? (1 - banana.fromPlayer) : banana.fromPlayer;
+                celebratingPlayer = scoringPlayer;
+                gorillas[scoringPlayer].score++;
+
+                celestialLaughTimer = 35; 
+
+                let winnerName = (scoringPlayer === 0) ? player1Name : player2Name;
+                soundModernVictory();
+                startRobotDanceMusic();
+                
+                if (isSelf) {
+                    document.getElementById("message").innerText = `¡AUTODISPARO BUMERÁN! ¡${winnerName} gana por error!`;
+                } else {
+                    document.getElementById("message").innerText = `¡IMPACTO! ¡${winnerName} baila el Robot Dance!`;
+                }
+
+                updateHUD();
+
+                let expAnim = setInterval(() => {
+                    if (explodingGorilla) {
+                        explodingGorilla.radius += 4;
+                        draw();
+                        if (explodingGorilla.radius > 50) {
+                            clearInterval(expAnim);
+                            explodingGorilla = null;
+                        }
+                    }
+                }, 40);
+
+                let celebrationInterval = setInterval(() => {
+                    celebrationFrame++;
+                    draw();
+                }, 60);
+
+                setTimeout(() => {
+                    clearInterval(celebrationInterval);
+                    stopRobotDanceMusic();
+                    celebratingPlayer = null;
+                    celestialLaughTimer = 0;
+                    currentGame++;
+                    if (currentGame > totalGames) {
+                        highScores.push({ name: player1Name, score: gorillas[0].score });
+                        highScores.push({ name: player2Name, score: gorillas[1].score });
+                        highScores.sort((a, b) => b.score - a.score);
+
+                        let scoreBoardText = "--- SALÓN DE LA FAMA (MEJORES JUGADORES) ---\n";
+                        highScores.forEach((item, index) => {
+                            scoreBoardText += `${index + 1}. ${item.name} - ${item.score} pts\n`;
+                        });
+
+                        alert(`¡JUEGO TERMINADO!\n\nPuntuación Final:\n${player1Name}: ${gorillas[0].score}\n${player2Name}: ${gorillas[1].score}\n\n${scoreBoardText}`);
+                        
+                        document.getElementById("start-overlay").style.display = "flex";
+                    } else {
+                        initCity();
+                    }
+                }, 2500);
+
+                banana = null;
+                return;
+            } 
+            else if (distToGorilla < 50 && gor.damage === 0 && !isSelf) {
+                stopBananaFlightSound();
+                soundRetroExplosion(0.4, false);
+                let randDamage = Math.random();
+                if (randDamage < 0.33) gor.damage = 1; 
+                else if (randDamage < 0.66) gor.damage = 2; 
+                else gor.damage = 3; 
+
+                let partNames = ["", "el brazo", "la cabeza", "una pierna"];
+                let partName = partNames[gor.damage];
+                document.getElementById("message").innerText = `¡BOOM! ¡El tiro voló ${partName} del gorila!`;
+                
+                setTimeout(() => {
+                    endTurn(`¡Daño crítico cercano! Turno del siguiente.`);
+                }, 1200);
+                banana = null;
+                return;
+            }
+        }
+    }
+
+    for (let b of buildings) {
+        if (banana.x > b.x && banana.x < b.x + b.w && banana.y > b.y && banana.y < canvas.height) {
+            
+            let insideAnyCrater = b.craters.some(c => Math.hypot(banana.x - c.x, banana.y - c.y) < c.radius);
+
+            if (insideAnyCrater) {
+                continue;
+            }
+
+            stopBananaFlightSound();
+            b.craters.push({ x: banana.x, y: banana.y, radius: 18 });
+            explosion(banana.x, banana.y, "¡Impacto en el edificio!", false);
+            return;
+        }
+    }
+
+    requestAnimationFrame(updatePhysics);
+}
+
+function runZeroGravityCutscene() {
+    banana = null;
+    gameActive = false;
+    document.getElementById("message").innerText = "🚀 ¡El banano cruzó la estratosfera y se fue al espacio exterior!";
+
+    let frame = 0;
+    function cutsceneLoop() {
+        frame++;
+        ctx.fillStyle = "#000011";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.fillStyle = "#FFFFFF";
+        for (let i = 0; i < 50; i++) {
+            let sx = (i * 47) % canvas.width;
+            let sy = (i * 31 + frame) % canvas.height;
+            ctx.fillRect(sx, sy, 2, 2);
+        }
+
+        ctx.fillStyle = "#FFFF55";
+        ctx.font = "bold 20px 'Courier New'";
+        ctx.textAlign = "center";
+        ctx.fillText("¡EL BANANO NUNCA CAYÓ!", canvas.width / 2, 90);
+        ctx.fillStyle = "#FF3333";
+        ctx.fillText("REINICIANDO EL JUEGO JAJAJA...", canvas.width / 2, 125);
+
+        drawTombstoneAndSkull(200, 360, player1Name, frame);
+        drawTombstoneAndSkull(600, 360, player2Name, frame);
+
+        if (frame < 180) {
+            requestAnimationFrame(cutsceneLoop);
+        } else {
+            document.getElementById("message").innerText = "";
+            startGameConfig();
+        }
+    }
+    cutsceneLoop();
+}
+
+function drawTombstoneAndSkull(x, y, name, frame) {
+    ctx.save();
+    ctx.translate(x, y);
+
+    ctx.fillStyle = "#777777";
+    ctx.fillRect(-35, -50, 70, 70);
+    ctx.beginPath();
+    ctx.arc(0, -50, 35, Math.PI, 0, false);
+    ctx.fill();
+
+    ctx.fillStyle = "#000000";
+    ctx.font = "10px 'Courier New'";
+    ctx.textAlign = "center";
+    ctx.fillText("Q.E.P.D.", 0, -25);
+    ctx.fillText(name.substring(0, 8), 0, -5);
+
+    let bounce = Math.sin(frame / 5) * 6;
+    let tilt = Math.sin(frame / 8) * 0.2;
+    ctx.translate(0, -75 + bounce);
+    ctx.rotate(tilt);
+
+    ctx.fillStyle = "#EEEEEE";
+    ctx.beginPath();
+    ctx.arc(0, -10, 12, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#000000";
+    ctx.fillRect(-5, -13, 3, 4);
+    ctx.fillRect(2, -13, 3, 4);
+
+    ctx.restore();
+}
+
+function explosion(x, y, msg, isWin) {
+    ctx.fillStyle = "#FF4500";
+    ctx.beginPath();
+    ctx.arc(x, y, 22, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (!isWin) {
+        soundRetroExplosion(0.35, false);
+        document.getElementById("message").innerText = msg;
+        setTimeout(() => {
+            if (banana) {
+                endTurn(msg);
+            }
+        }, 800);
+    }
+}
+
+function endTurn(msg) {
+    banana = null;
+    document.getElementById("message").innerText = msg;
+    currentPlayer = 1 - currentPlayer; 
+    resetInactivityTimer();
+    updateHUD();
+    draw();
+
+    if (isVsAI && currentPlayer === 1 && gameActive) {
+        setControlsEnabled(false);
+        document.getElementById("message").innerText = `${msg} | 🤖 ${player2Name} pensando disparo...`;
+        setTimeout(() => {
+            if (gameActive && currentPlayer === 1) {
+                calculateAIShot();
+            }
+        }, 1000);
+    } else {
+        setControlsEnabled(true);
+    }
+}
+</script>
+
+</body>
+</html>
